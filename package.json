@@ -1,6 +1,6 @@
 {
   "name": "gladys-anthem",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Gladys Assistant external integration for Anthem AV receivers and processors (power, volume, mute, source, zones), over their local IP control. Unofficial, not affiliated with Anthem.",
   "type": "module",

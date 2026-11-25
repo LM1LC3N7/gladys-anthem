@@ -10,6 +10,8 @@ the notes of the version's GitHub Release.
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-11-25
+
 ### Added
 
 - Anthem AV receivers and processors (MRX 540, 740, 1140, AVM 70, 90) over
@@ -28,3 +30,6 @@ the notes of the version's GitHub Release.
 - A "Check the devices" button; the connection status says which address
   does not answer.
 - Documentation in English and French.
+
+[Unreleased]: https://github.com/LM1LC3N7/gladys-anthem/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/LM1LC3N7/gladys-anthem/releases/tag/v0.1.1
