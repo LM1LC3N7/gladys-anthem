@@ -87,9 +87,9 @@ test('/data: only valid devices, zones, inputs and pending commands kept; no pro
         "__proto__": { "host": "10.0.0.4", "port": 14999 }
       },
       "protect": {
-        "10.0.0.2_14999_z1": { "kind": "power_off", "at": 1000, "sends": 1 },
-        "10.0.0.2_14999_z3": { "kind": "power_off", "at": 1000, "sends": 1 },
-        "10.0.0.2_14999_z2": { "kind": "power_on", "at": 1000, "sends": 0 }
+        "10.0.0.2_14999_z1": { "power_off": { "at": 1000, "sends": 1 }, "mute": { "at": 2000, "sends": 0 } },
+        "10.0.0.2_14999_z3": { "power_off": { "at": 1000, "sends": 1 } },
+        "10.0.0.2_14999_z2": { "power_on": { "at": 1000, "sends": 0 }, "mute": { "at": "x", "sends": 0 } }
       }
     }`),
   );
@@ -104,6 +104,14 @@ test('/data: only valid devices, zones, inputs and pending commands kept; no pro
     { value: '2', label: 'TV' },
   ]);
   assert.deepEqual(Object.keys(data.protect), ['10.0.0.2_14999_z1']);
+  // Both slots of a zone kept: a power off and a mute never replace each other.
+  assert.deepEqual(
+    { ...data.protect['10.0.0.2_14999_z1'] },
+    {
+      power_off: { at: 1000, sends: 1 },
+      mute: { at: 2000, sends: 0 },
+    },
+  );
   assert.equal({}.host, undefined);
 });
 

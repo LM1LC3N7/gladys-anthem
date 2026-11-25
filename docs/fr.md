@@ -80,8 +80,7 @@ passe par le plafond, lu juste avant l'envoi de la commande : une valeur plus
 forte est ramenée au plafond. Retirer la sourdine lit d'abord le volume et le
 baisse au plafond s'il est au-dessus, puis ne retire la sourdine qu'une fois
 qu'une lecture le montre au plafond ou en dessous ; si le volume ne peut pas
-être lu, rien n'est envoyé. Après un **Power on** depuis Gladys, le volume est lu dès que la
-zone le donne (dans les 2 minutes) et baissé au plafond s'il est au-dessus.
+être lu, rien n'est envoyé. Après un **Power on** depuis Gladys, le volume est relu toutes les quelques secondes jusqu'à ce que la zone le donne (dans les 2 minutes) et baissé au plafond s'il est au-dessus.
 Le volume réglé sur l'appareil lui-même (bouton, télécommande, application
 Anthem) n'est pas modifié autrement.
 
@@ -96,10 +95,15 @@ préalable, ni d'une file de requêtes pleine.
 
 Elles ne partent pas, ou ne sont pas confirmées, dans ces seuls cas :
 
-- **l'appareil n'est pas connecté** : réessayées toutes les 250 ms pendant
-  environ 3 secondes, puis gardées (même après un redémarrage de
-  l'intégration) et envoyées dès que la connexion revient, pendant 2 minutes
-  au plus ;
+- **l'appareil n'est pas connecté** : une connexion est demandée aussitôt
+  (quel que soit le délai de reconnexion, au plus toutes les 2 secondes), la
+  commande réessayée toutes les 250 ms pendant environ 3 secondes, puis
+  gardée (même après un redémarrage de l'intégration) et envoyée dès que la
+  connexion revient. Elle n'est abandonnée après 2 minutes qu'une fois une
+  connexion tentée après ces 2 minutes et échouée ; une commande déjà partie
+  n'est plus renvoyée après 2 minutes. Power off et Mute sont gardées à part :
+  appuyer sur l'une n'annule jamais l'autre. Tant qu'elle est gardée, Gladys
+  la signale comme non faite ;
 - **l'appareil les refuse** (une réponse d'erreur) : signalées comme refusées ;
 - **Mute sur une zone éteinte** (ou un appareil en veille) : rien ne joue,
   signalé comme fait ;

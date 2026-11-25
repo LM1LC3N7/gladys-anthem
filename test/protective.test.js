@@ -84,7 +84,7 @@ test('power off with the device away: kept, then sent first when the connection 
   const after = fake.commands.slice(before);
   const identified = after.lastIndexOf('IDM?');
   assert.equal(after[identified + 1], 'Z1POW0', `sent before any read: ${after.join(' ')}`);
-  await waitFor(() => !app.protect.has(`127.0.0.1_${fake.port}_z1`), 'confirmed by a later read');
+  await waitFor(() => app.protect.size === 0, 'confirmed by a later read');
 });
 
 test('power off not applied: sent again on a read made after it, 3 sends at most', async (t) => {
@@ -123,10 +123,13 @@ test('an unconfirmed power off is not resent from a report, only from a read aft
   const ack = await press(gladys, device, 'power_off');
   assert.equal(ack.success, false);
   const sends = fake.writes('Z1POW0').length;
-  // The device reports "on" by itself: no decision on it.
+  // The device reports "off" then "on" by itself: no decision on it (the
+  // command stays pending, nothing sent again).
+  fake.push('Z1POW0;');
   fake.push('Z1POW1;');
   await settle(100);
   assert.equal(fake.writes('Z1POW0').length, sends);
+  assert.ok(app.protect.has(`127.0.0.1_${fake.port}_z1#power_off`));
   // A read made after the send shows it on: sent again (once the late
   // answers of the silent queries can no longer come).
   fake.override.delete('Z1POW?');
@@ -148,11 +151,11 @@ test('a power on that left ends the resend of a power off; a mute cancels a wait
   fake.override.set('Z1POW0', 'silent');
   await press(gladys, device, 'power_off');
   const target = `127.0.0.1_${fake.port}_z1`;
-  assert.ok(app.protect.has(target));
+  assert.ok(app.protect.has(`${target}#power_off`));
   fake.override.delete('Z1POW0');
   const on = await press(gladys, device, 'power_on');
   assert.equal(on.success, true, on.error);
-  assert.equal(app.protect.has(target), false);
+  assert.equal(app.protect.has(`${target}#power_off`), false);
   // A stuck volume, an unmute waiting behind it, then a mute.
   fake.override.set('Z1PVOL25', 'silent');
   const stuck = press(gladys, device, 'volume', 25);
@@ -180,8 +183,8 @@ test('a restart sends the pending power off of /data first; a future or old date
     zones: [1, 2],
     inputs: [],
   };
-  data.protect[`127.0.0.1_${fake.port}_z1`] = { kind: 'power_off', at: now - 10_000, sends: 1 };
-  data.protect[`127.0.0.1_${fake.port}_z2`] = { kind: 'mute', at: now + 60_000, sends: 0 };
+  data.protect[`127.0.0.1_${fake.port}_z1`] = { power_off: { at: now - 10_000, sends: 1 } };
+  data.protect[`127.0.0.1_${fake.port}_z2`] = { mute: { at: now + 60_000, sends: 0 } };
   fake.zones[2].power = true;
   const store = new MemoryStore(data);
   // Once the SDK connected, neither the configuration nor the Gladys
@@ -276,6 +279,7 @@ test('/data unreadable: nothing written over it, zones known from Gladys, merged
     connect: false,
     config: { addresses: '' },
     gladysOptions: { devices: [created] },
+    timings: { dataRetry: 1_500 },
   });
   await gladys.connect();
   await waitFor(() => linkOf(app)?.connected, 'the link from the Gladys device');
@@ -284,11 +288,26 @@ test('/data unreadable: nothing written over it, zones known from Gladys, merged
   assert.match(gladys.fake.connectionStatus.message.en, /cannot be read/);
   assert.equal(app.dataUnreadable, true);
   // Readable again: merged (the old input kept), saved, the status cleared.
-  await waitFor(() => !app.dataUnreadable, 'read again');
+  await waitFor(() => !app.dataUnreadable, 'read again', 4_000);
   assert.ok(app.data.devices[`127.0.0.1_${fake.port}`].inputs.some((i) => i.value === '9'));
   await waitFor(() => store.saves > 0, 'saved once readable');
   await waitFor(
     () => !/cannot be read/.test(gladys.fake.connectionStatus?.message?.en ?? ''),
     'the status cleared',
   );
+});
+
+test('a late answer of a read made before the power off never confirms it', async (t) => {
+  const { gladys, id, fake, app } = await setup(t);
+  const device = await createDevice(gladys, id, 1);
+  // A read of the power times out just before the press...
+  fake.override.set('Z1POW?', 'silent');
+  const link = linkOf(app);
+  await link.readAll(link.session);
+  fake.override.delete('Z1POW?');
+  // ...so the first answer after the power off may be its late answer:
+  // never taken as the confirmation, the power off is sent again.
+  const ack = await press(gladys, device, 'power_off');
+  assert.equal(ack.success, true, ack.error);
+  assert.equal(fake.writes('Z1POW0').length, 2);
 });

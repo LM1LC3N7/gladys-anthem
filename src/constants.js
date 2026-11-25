@@ -87,6 +87,8 @@ export const TIMINGS = Object.freeze({
    */
   protectHold: 2 * 60_000,
   protectSends: 3,
+  /** A protective command asks a connection at once, at most this often. */
+  protectConnectGap: 2_000,
   /**
    * After a Power on: the cap checked again every `wakeCheckDelay`,
    * `wakeChecks` times; and within `wakeWindow` the first state that shows
@@ -95,6 +97,8 @@ export const TIMINGS = Object.freeze({
   wakeCheckDelay: 2_500,
   wakeChecks: 6,
   wakeWindow: 120_000,
+  /** After the first `wakeChecks`, the checks go on this often until the window ends. */
+  wakeCheckSlow: 5_000,
   /** The states of one zone are published at most this often (a knob turned fast). */
   publishDelay: 1_000,
   /** Writes to /data are grouped. */

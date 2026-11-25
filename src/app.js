@@ -19,6 +19,11 @@ import { T } from './i18n.js';
 import { buildDevice, deviceName, featureKey, idsOf, inputOptions, stateList } from './model.js';
 import { FileStore, emptyData, isInputValue } from './store.js';
 
+const PROTECTIVE_KEYS = Object.freeze([FEATURES.POWER_OFF, FEATURES.MUTE]);
+
+/** The slot of one protective command of one zone (a power off and a mute never share one). */
+const protectKey = (target, key) => `${target}#${key}`;
+
 const BUTTONS = new Set([FEATURES.POWER_ON, FEATURES.POWER_OFF, FEATURES.MUTE, FEATURES.UNMUTE]);
 
 /** The protective commands: what they set, and the zone field that confirms it. */
@@ -217,6 +222,9 @@ export class AnthemApp {
       this.data.maxVolume = this.config.maxVolume;
       this.persist();
     }
+    // Links from /data and the configuration first: a pending power off
+    // never waits for the list of Gladys devices.
+    await this.step('open the links', () => this.syncLinks());
     await this.step('read the Gladys devices', () => this.refreshCreated());
     // A configuration save asks the silent links again (never sooner than the
     // base interval); a reconnection to Gladys does not.
@@ -297,9 +305,12 @@ export class AnthemApp {
     if (this.data.maxVolume === undefined) {
       this.data.maxVolume = loaded.maxVolume;
     }
-    for (const [target, entry] of Object.entries(loaded.protect)) {
-      if (!this.protect.has(target)) {
-        this.data.protect[target] = entry;
+    for (const [target, entries] of Object.entries(loaded.protect)) {
+      for (const [kind, entry] of Object.entries(entries)) {
+        if (!this.protect.has(protectKey(target, kind))) {
+          this.data.protect[target] ??= Object.create(null);
+          this.data.protect[target][kind] = entry;
+        }
       }
     }
     this.restoreProtect();
@@ -357,8 +368,8 @@ export class AnthemApp {
           await this.refreshCreated();
           this.syncLinks();
         }
-        for (const target of [...this.protect.keys()]) {
-          this.protectExpired(target);
+        for (const { target, kind } of [...this.protect.values()]) {
+          this.protectExpired(target, kind);
         }
       })
       .then(() => this.updateStatus())
@@ -366,7 +377,8 @@ export class AnthemApp {
   }
 
   persist() {
-    if (this.persistTimer || this.dataUnreadable || !this.data) {
+    // /data unreadable: checked in the timer, just before the write.
+    if (this.persistTimer || !this.data) {
       return;
     }
     this.persistTimer = this.timers.setTimeout(() => {
@@ -446,7 +458,7 @@ export class AnthemApp {
     for (const device of this.devices) {
       const used = device.zones.some((zone) => {
         const target = platformId(device, zone);
-        return this.created.has(target) || this.protect.has(target);
+        return this.created.has(target) || this.hasProtect(target);
       });
       if (used) {
         wanted.set(addressKey(device), { host: device.host, port: device.port });
@@ -490,7 +502,9 @@ export class AnthemApp {
       if (known) {
         // Pending protective commands go first, before any state read.
         for (const z of known.zones) {
-          this.sendProtect(platformId(known, z));
+          for (const key of PROTECTIVE_KEYS) {
+            this.sendProtect(platformId(known, z), key);
+          }
         }
       }
     } else if (event === 'up') {
@@ -1033,9 +1047,11 @@ export class AnthemApp {
         const read = await this.read(link, zone, 'PVOL', budget, { urgent: true });
         if (!read || read.value === undefined) {
           throw new Error(
-            read?.refused === 'Z' || read?.refused === 'I'
+            read?.refused === 'Z'
               ? `${deviceName(device, zone)} is off: nothing sent`
-              : `${deviceName(device, zone)}: volume not read, nothing sent`,
+              : read?.refused === 'I'
+                ? `${deviceName(device, zone)}: volume unknown on this model (or in standby), nothing sent`
+                : `${deviceName(device, zone)}: volume not read, nothing sent`,
           );
         }
         const cap = this.maxVolume;
@@ -1097,16 +1113,23 @@ export class AnthemApp {
       epoch.mute += 1;
     }
     this.cancelQueued(target);
-    this.setProtect(target, key);
+    const pending = this.setProtect(target, key);
+    const generation = this.generation;
     let sent = false;
-    while (this.remaining(started) > 300) {
-      const pending = this.protect.get(target);
-      if (!pending || pending.kind !== key) {
-        // Confirmed by a read, or overtaken by a newer command that left.
-        return undefined;
+    while (this.remaining(started) > 300 && generation === this.generation) {
+      if (this.protect.get(protectKey(target, key)) !== pending) {
+        // Confirmed by a read, or replaced by a newer command that left:
+        // success. Expired or dropped otherwise: said so.
+        if (pending.outcome === 'confirmed' || pending.outcome === 'replaced') {
+          return undefined;
+        }
+        break;
       }
       const link = this.linkOf(device);
       if (!link?.ready) {
+        // Never left to the reconnection backoff: a connection asked now
+        // (spaced out by the link), then tried again every 250 ms.
+        link?.connectNow();
         await sleep(this.timers, 250);
         continue;
       }
@@ -1130,41 +1153,40 @@ export class AnthemApp {
           Math.min(this.timings.requestTimeout, this.remaining(started) - 100),
           { protective: true },
         );
-        if (this.protectConfirmedBy(target, read)) {
+        if (this.protectConfirmedBy(target, key, read)) {
           return undefined;
         }
-        if (read?.value === undefined) {
+        if (read?.value === undefined || !this.sendsLeft(pending)) {
           break;
         }
         // Read after it, still on (or unmuted): sent again while budget and sends are left.
-        if (!this.sendsLeft(this.protect.get(target))) {
-          break;
-        }
         continue;
       }
       if (outcome === 'unsent') {
         await sleep(this.timers, 250);
       }
     }
-    this.scheduleFollowUps(device, zone);
+    if (generation === this.generation) {
+      this.scheduleFollowUps(device, zone);
+    }
     throw new DeviceError(
       sent ? ERROR_KINDS.TIMEOUT : ERROR_KINDS.UNREACHABLE,
       sent
         ? 'Sent, without confirmation from the device: sent again if a later read shows it was not applied'
-        : `${deviceName(device, zone)} is not connected: kept, sent when the connection comes back (2 minutes at most)`,
+        : `${deviceName(device, zone)} is not connected: kept, sent when the connection comes back (2 minutes at most after a connection attempt)`,
       { sent },
     );
   }
 
   /**
-   * One send of the pending protective command of `target`. 'done' when
-   * nothing is left to do (refused because the zone is off: nothing to
+   * One send of the pending protective command `key` of `target`. 'done'
+   * when nothing is left to do (refused because the zone is off: nothing to
    * mute), 'refused' when the device answered an error, 'sent' when it left
    * (acked or not), 'unsent' when nothing left.
    */
   async sendProtectOnce(target, link, zone, key, budget) {
-    const pending = this.protect.get(target);
-    if (!pending || pending.kind !== key) {
+    const pending = this.protect.get(protectKey(target, key));
+    if (!pending) {
       return 'done';
     }
     if (!this.sendsLeft(pending)) {
@@ -1184,11 +1206,11 @@ export class AnthemApp {
       if (err.kind === ERROR_KINDS.REFUSED) {
         if (key === FEATURES.MUTE && (err.code === 'Z' || err.code === 'I')) {
           // The zone is off (or the device in standby): it plays nothing.
-          this.clearProtect(target);
+          this.clearProtect(target, key, 'confirmed');
           return 'done';
         }
         this.logger.warn(`${target}: ${key} refused by the device (${err.message})`);
-        this.clearProtect(target);
+        this.clearProtect(target, key, 'refused');
         return 'refused';
       }
       return err.sent ? 'sent' : 'unsent';
@@ -1201,44 +1223,59 @@ export class AnthemApp {
   }
 
   /** True (and the pending command cleared) when `read`, made after the last send, confirms it. */
-  protectConfirmedBy(target, read) {
-    const pending = this.protect.get(target);
+  protectConfirmedBy(target, key, read) {
+    const pending = this.protect.get(protectKey(target, key));
     if (!pending) {
-      return true;
+      return false;
     }
     if (!read || read.value === undefined || read.seq <= pending.sentSeq) {
       return false;
     }
-    if (read.value === PROTECTIVE[pending.kind].wanted) {
-      this.clearProtect(target);
+    if (read.value === PROTECTIVE[key].wanted) {
+      this.clearProtect(target, key, 'confirmed');
       return true;
     }
     return false;
   }
 
+  /** A new press of `key` on `target`: its own slot (a power off and a mute never replace each other). */
   setProtect(target, key) {
-    this.protect.set(target, {
+    const previous = this.protect.get(protectKey(target, key));
+    if (previous) {
+      previous.outcome = 'pressed again';
+    }
+    const pending = {
+      target,
       kind: key,
       at: this.now(),
       wallAt: this.wallNow(),
       // A new press restarts the count: the user asked again.
       sends: 0,
       sentSeq: 0,
-    });
+      outcome: undefined,
+    };
+    this.protect.set(protectKey(target, key), pending);
     this.saveProtect();
+    return pending;
   }
 
-  clearProtect(target) {
-    if (this.protect.delete(target)) {
+  clearProtect(target, key, outcome) {
+    const pending = this.protect.get(protectKey(target, key));
+    if (pending) {
+      pending.outcome = outcome;
+      this.protect.delete(protectKey(target, key));
       this.saveProtect();
     }
   }
 
-  /** A newer command of the target left: the resend of `kind` stops. */
+  /** A newer command of the target left: the resend of `kind` stops (replaced). */
   dropProtect(target, kind) {
-    if (this.protect.get(target)?.kind === kind) {
-      this.clearProtect(target);
-    }
+    this.clearProtect(target, kind, 'replaced');
+  }
+
+  /** Whether `target` has a pending protective command. */
+  hasProtect(target) {
+    return PROTECTIVE_KEYS.some((key) => this.protect.has(protectKey(target, key)));
   }
 
   saveProtect() {
@@ -1246,8 +1283,9 @@ export class AnthemApp {
       return;
     }
     const table = Object.create(null);
-    for (const [target, { kind, wallAt, sends }] of this.protect) {
-      table[target] = { kind, at: wallAt, sends };
+    for (const { target, kind, wallAt, sends } of this.protect.values()) {
+      table[target] ??= Object.create(null);
+      table[target][kind] = { at: wallAt, sends };
     }
     this.data.protect = table;
     this.persist();
@@ -1260,40 +1298,62 @@ export class AnthemApp {
    */
   restoreProtect() {
     const wall = this.wallNow();
-    for (const [target, entry] of Object.entries(this.data?.protect ?? {})) {
-      if (this.protect.has(target)) {
-        continue;
+    for (const [target, entries] of Object.entries(this.data?.protect ?? {})) {
+      for (const [kind, entry] of Object.entries(entries)) {
+        if (this.protect.has(protectKey(target, kind))) {
+          continue;
+        }
+        const age = wall - entry.at;
+        if (age < 0 || age > this.timings.protectHold) {
+          continue;
+        }
+        this.protect.set(protectKey(target, kind), {
+          target,
+          kind,
+          at: this.now() - age,
+          wallAt: entry.at,
+          sends: entry.sends,
+          sentSeq: 0,
+          outcome: undefined,
+        });
       }
-      const age = wall - entry.at;
-      if (age < 0 || age > this.timings.protectHold) {
-        continue;
-      }
-      this.protect.set(target, {
-        kind: entry.kind,
-        at: this.now() - age,
-        wallAt: entry.at,
-        sends: entry.sends,
-        sentSeq: 0,
-      });
     }
     this.saveProtect();
   }
 
-  /** Drops a pending command older than `protectHold`; true when dropped. */
-  protectExpired(target) {
-    const pending = this.protect.get(target);
-    if (pending && this.now() - pending.at > this.timings.protectHold) {
-      this.logger.info(`${target}: ${pending.kind} not confirmed, no longer sent again`);
-      this.clearProtect(target);
-      return true;
+  /**
+   * Drops a pending command older than `protectHold`. One never sent is
+   * kept while the device is identified (it goes now), and while no
+   * connection was tried after the hold: one is asked then, so the
+   * reconnection backoff never makes it expire unsent. True when dropped.
+   */
+  protectExpired(target, key) {
+    const pending = this.protect.get(protectKey(target, key));
+    if (!pending || this.now() - pending.at <= this.timings.protectHold) {
+      return false;
     }
-    return false;
+    const parsed = parsePlatformId(target);
+    const device = parsed && this.data?.devices[deviceId(parsed)];
+    const link = device && this.linkOf(device);
+    if (link && pending.sends === 0) {
+      if (link.ready) {
+        return false;
+      }
+      if (!(link.lastAttempt > pending.at + this.timings.protectHold)) {
+        link.connectNow();
+        return false;
+      }
+    }
+    this.logger.info(`${target}: ${key} not confirmed, no longer sent again`);
+    this.clearProtect(target, key, 'expired');
+    return true;
   }
 
-  /** The connection came back (device identified): the pending command of `target` sent. */
-  sendProtect(target) {
-    const pending = this.protect.get(target);
-    if (!pending || this.protectExpired(target) || this.protectSending.has(target)) {
+  /** The connection came back (device identified): the pending command `key` of `target` sent. */
+  sendProtect(target, key) {
+    const slot = `${target}#${key}`;
+    const pending = this.protect.get(protectKey(target, key));
+    if (!pending || this.protectExpired(target, key) || this.protectSending.has(slot)) {
       return;
     }
     const parsed = parsePlatformId(target);
@@ -1302,13 +1362,20 @@ export class AnthemApp {
     if (!link?.ready || !this.sendsLeft(pending)) {
       return;
     }
-    this.protectSending.add(target);
-    this.sendProtectOnce(target, link, parsed.zone, pending.kind, () => this.timings.requestTimeout)
+    this.protectSending.add(slot);
+    this.sendProtectOnce(target, link, parsed.zone, key, () => this.timings.requestTimeout)
       .catch(() => {})
       .finally(() => {
-        this.protectSending.delete(target);
+        this.protectSending.delete(slot);
         this.scheduleFollowUps(device, parsed.zone);
       });
+  }
+
+  /** Both protective slots of a zone checked (see checkProtectKey). */
+  checkProtect(target) {
+    for (const key of PROTECTIVE_KEYS) {
+      this.checkProtectKey(target, key);
+    }
   }
 
   /**
@@ -1317,9 +1384,9 @@ export class AnthemApp {
    * it not applied. Reports the device sends by itself never decide (a
    * power on from the remote is not fought).
    */
-  checkProtect(target) {
-    const pending = this.protect.get(target);
-    if (!pending || this.protectExpired(target)) {
+  checkProtectKey(target, key) {
+    const pending = this.protect.get(protectKey(target, key));
+    if (!pending || this.protectExpired(target, key)) {
       return;
     }
     const parsed = parsePlatformId(target);
@@ -1329,10 +1396,10 @@ export class AnthemApp {
       return;
     }
     if (pending.sends === 0) {
-      this.sendProtect(target);
+      this.sendProtect(target, key);
       return;
     }
-    const { field, wanted } = PROTECTIVE[pending.kind];
+    const { field, wanted } = PROTECTIVE[key];
     const state = link.zoneState(parsed.zone);
     if (
       field === 'mute' &&
@@ -1340,16 +1407,16 @@ export class AnthemApp {
       link.readSeq(parsed.zone, 'power') > pending.sentSeq
     ) {
       // The zone was read off after the mute: it plays nothing.
-      this.clearProtect(target);
+      this.clearProtect(target, key, 'confirmed');
       return;
     }
     if (link.readSeq(parsed.zone, field) <= pending.sentSeq) {
       return;
     }
     if (state[field] === wanted) {
-      this.clearProtect(target);
+      this.clearProtect(target, key, 'confirmed');
     } else if (state[field] === !wanted) {
-      this.sendProtect(target);
+      this.sendProtect(target, key);
     }
   }
 
@@ -1435,7 +1502,11 @@ export class AnthemApp {
     }
   }
 
-  /** After a Power on: the cap checked again every `wakeCheckDelay`, `wakeChecks` times at most. */
+  /**
+   * After a Power on: the cap checked again every `wakeCheckDelay`
+   * (`wakeChecks` times), then every `wakeCheckSlow` until the wake window
+   * ends: a zone slow to give its volume is capped as soon as it does.
+   */
   capAfterWake(device, zone, epoch, attempt, chain = { timer: undefined }) {
     const target = platformId(device, zone);
     if (attempt === 1) {
@@ -1443,36 +1514,40 @@ export class AnthemApp {
       this.wakeChecks.set(target, chain);
     }
     const current = () => this.wakeChecks.get(target) === chain;
-    if (attempt > this.timings.wakeChecks) {
+    const until = this.wakeWindows.get(target);
+    if (until === undefined || this.now() > until) {
       this.wakeChecks.delete(target);
       this.logger.info(`${deviceName(device, zone)}: volume not confirmed after power on`);
       return;
     }
     const generation = this.generation;
-    chain.timer = this.timers.setTimeout(() => {
-      if (generation !== this.generation || !current()) {
-        return;
-      }
-      this.enqueue(target, async () => {
-        const link = this.connectedLink(device);
-        if (!link || !current()) {
-          return !current();
+    chain.timer = this.timers.setTimeout(
+      () => {
+        if (generation !== this.generation || !current()) {
+          return;
         }
-        return this.capVolume(device, zone, link, epoch, this.deadline(this.timings.preRead));
-      })
-        .catch(() => false)
-        .then((done) => {
-          if (!current()) {
-            return;
+        this.enqueue(target, async () => {
+          const link = this.connectedLink(device);
+          if (!link || !current()) {
+            return !current();
           }
-          if (done) {
-            this.wakeChecks.delete(target);
-            this.wakeWindows.delete(target);
-          } else {
-            this.capAfterWake(device, zone, epoch, attempt + 1, chain);
-          }
-        });
-    }, this.timings.wakeCheckDelay);
+          return this.capVolume(device, zone, link, epoch, this.deadline(this.timings.preRead));
+        })
+          .catch(() => false)
+          .then((done) => {
+            if (!current()) {
+              return;
+            }
+            if (done) {
+              this.wakeChecks.delete(target);
+              this.wakeWindows.delete(target);
+            } else {
+              this.capAfterWake(device, zone, epoch, attempt + 1, chain);
+            }
+          });
+      },
+      attempt <= this.timings.wakeChecks ? this.timings.wakeCheckDelay : this.timings.wakeCheckSlow,
+    );
   }
 
   deadline(ms) {

@@ -73,7 +73,7 @@ the cap, read just before the command leaves: a higher value is set to the
 cap. Unmuting first reads the volume and lowers it to the cap when above,
 then unmutes only once a read shows it at the cap or below; if the volume
 cannot be read, nothing is sent. After a **Power on** from Gladys,
-the volume is read as soon as the zone gives it (within 2 minutes) and
+the volume is read again every few seconds until the zone gives it (within 2 minutes) and
 lowered to the cap when above. The volume set on the device itself (knob,
 remote, Anthem app) is not changed otherwise.
 
@@ -87,9 +87,14 @@ Gladys cannot give it), on a state read before, or on a full request queue.
 
 They are not sent, or not confirmed, in these cases only:
 
-- **the device is not connected**: tried again every 250 ms for about 3 seconds,
-  then kept (also across a restart of the integration) and sent as soon as
-  the connection comes back, for 2 minutes at most;
+- **the device is not connected**: a connection is asked at once (whatever
+  the reconnection delay, at most every 2 seconds), the command tried again
+  every 250 ms for about 3 seconds, then kept (also across a restart of the
+  integration) and sent as soon as the connection comes back. It is dropped
+  after 2 minutes only once a connection was tried after those 2 minutes and
+  failed; one that left is no longer sent again after 2 minutes. A Power off
+  and a Mute are kept apart: pressing one never cancels the other. While
+  kept, Gladys reports it as not done;
 - **the device refuses them** (an error answer): reported as refused;
 - **Mute on a zone that is off** (or a device in standby): nothing plays,
   reported as done;

@@ -96,6 +96,9 @@ export function openSession({
       settled = true;
       clearTimeout(timer);
       socket.setNoDelay(true);
+      // A half-open socket (cable pulled, switch down) is closed by the
+      // system too, not only by the silence check of the link.
+      socket.setKeepAlive(true, 10_000);
       resolve(new Session(socket, { now, onReport, onClose, onFrame, staleMs }));
     });
   });

@@ -61,6 +61,12 @@ up to date at the end of every milestone.
   "everything off" never commands an amplifier; Power off and Mute are the
   protective commands of the module (never blocked), Power on, Unmute and
   the volume go through the cap.
+- **Protective commands, r1**: one slot per kind and zone (power off, mute),
+  in /data too; a press succeeds only when confirmed by a read or replaced by
+  a command that left; a press asks a connection at once (2 s apart at most,
+  outside the backoff); a command never sent expires only after a failed
+  attempt made past the hold. The cap checks after a power on go on (every
+  5 s) for the whole 2-minute window. TCP keepalive on the socket.
 - **Protective commands**: outside the zone queue, first on the connection
   (at most behind the one request on the wire, 1 s), commands waiting are
   cancelled and a command already dequeued is dropped before it is written

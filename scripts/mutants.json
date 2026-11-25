@@ -86,13 +86,13 @@
   {
     "name": "protective: not sent first when the connection comes back",
     "file": "src/app.js",
-    "from": "this.sendProtect(platformId(known, z));",
-    "to": "void z;"
+    "from": "            this.sendProtect(platformId(known, z), key);",
+    "to": "            void key;"
   },
   {
     "name": "protective: no link for a device with a pending command only",
     "file": "src/app.js",
-    "from": "return this.created.has(target) || this.protect.has(target);",
+    "from": "return this.created.has(target) || this.hasProtect(target);",
     "to": "return this.created.has(target);"
   },
   {
@@ -120,10 +120,10 @@
     "to": "return current.seq;"
   },
   {
-    "name": "/data: written over while unreadable",
+    "name": "/data: written over while unreadable (check just before the write)",
     "file": "src/app.js",
-    "from": "if (this.persistTimer || this.dataUnreadable || !this.data) {",
-    "to": "if (this.persistTimer || !this.data) {"
+    "from": "      this.persistTimer = undefined;\n      if (this.dataUnreadable) {\n        return;\n      }\n      this.store",
+    "to": "      this.persistTimer = undefined;\n      this.store"
   },
   {
     "name": "configuration: not asked again after a failure at connection",
@@ -148,5 +148,77 @@
     "file": "src/app.js",
     "from": "Math.min(this.timings.requestTimeout, this.remaining(started))",
     "to": "this.remaining(started)"
+  },
+  {
+    "name": "r1: an unmute not stopped by a later mute (guard)",
+    "file": "src/app.js",
+    "from": "(key !== FEATURES.UNMUTE || now.mute === epoch.mute)",
+    "to": "true"
+  },
+  {
+    "name": "r1: a mute does not bump its epoch",
+    "file": "src/app.js",
+    "from": "    } else {\n      epoch.mute += 1;\n    }",
+    "to": "    }"
+  },
+  {
+    "name": "r1: the wake window never caps",
+    "file": "src/app.js",
+    "from": "  capInWakeWindow(device, zone, link) {\n    const target = platformId(device, zone);",
+    "to": "  capInWakeWindow(device, zone, link) {\n    return;\n    const target = platformId(device, zone);"
+  },
+  {
+    "name": "r1: the wake window is never opened",
+    "file": "src/app.js",
+    "from": "this.wakeWindows.set(target, this.now() + this.timings.wakeWindow);",
+    "to": "void 0;"
+  },
+  {
+    "name": "r1: the wake window never ends",
+    "file": "src/app.js",
+    "from": "    if (this.now() > until) {\n      this.wakeWindows.delete(target);\n      return;\n    }\n    const { power, volume }",
+    "to": "    const { power, volume }"
+  },
+  {
+    "name": "r1: a power off leaves the volume checks running",
+    "file": "src/app.js",
+    "from": "      epoch.off += 1;\n      this.cancelWakeCheck(target);",
+    "to": "      epoch.off += 1;"
+  },
+  {
+    "name": "r1: no silence guard",
+    "file": "src/anthem/link.js",
+    "from": "if (this.now() - this.lastFrameAt > this.timings.silence) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "r1: no flood guard",
+    "file": "src/anthem/link.js",
+    "from": "if (this.frames.length > this.timings.floodFrames) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "r1: a protective press waits for the backoff",
+    "file": "src/app.js",
+    "from": "link?.connectNow();",
+    "to": "void link;"
+  },
+  {
+    "name": "r1: a never-sent command expires without an attempt after the hold",
+    "file": "src/app.js",
+    "from": "if (!(link.lastAttempt > pending.at + this.timings.protectHold)) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "r1: a power off and a mute share one slot",
+    "file": "src/app.js",
+    "from": "const protectKey = (target, key) => `${target}#${key}`;",
+    "to": "const protectKey = (target) => `${target}`;"
+  },
+  {
+    "name": "r1: the slow checks stop with the quick ones",
+    "file": "src/app.js",
+    "from": "    const until = this.wakeWindows.get(target);\n    if (until === undefined || this.now() > until) {",
+    "to": "    const until = this.wakeWindows.get(target);\n    if (until === undefined || this.now() > until || attempt > this.timings.wakeChecks) {"
   }
 ]

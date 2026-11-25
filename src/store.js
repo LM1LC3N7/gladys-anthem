@@ -73,18 +73,23 @@ function sanitize(data) {
       inputs: sanitizeInputs(device.inputs),
     };
   }
+  // Two slots per zone: a power off and a mute never replace each other.
   const protect = isObject(data.protect) ? data.protect : {};
-  for (const [key, entry] of Object.entries(protect).slice(0, LIMITS.devices * ZONES.length)) {
-    const target = parsePlatformId(key);
-    if (
-      target &&
-      isObject(entry) &&
-      PROTECTIVE_KINDS.includes(entry.kind) &&
-      Number.isFinite(entry.at) &&
-      Number.isInteger(entry.sends) &&
-      entry.sends >= 0
-    ) {
-      base.protect[key] = { kind: entry.kind, at: entry.at, sends: entry.sends };
+  for (const [key, entries] of Object.entries(protect).slice(0, LIMITS.devices * ZONES.length)) {
+    if (!parsePlatformId(key) || !isObject(entries)) {
+      continue;
+    }
+    for (const kind of PROTECTIVE_KINDS) {
+      const entry = Object.hasOwn(entries, kind) ? entries[kind] : undefined;
+      if (
+        isObject(entry) &&
+        Number.isFinite(entry.at) &&
+        Number.isInteger(entry.sends) &&
+        entry.sends >= 0
+      ) {
+        base.protect[key] ??= Object.create(null);
+        base.protect[key][kind] = { at: entry.at, sends: entry.sends };
+      }
     }
   }
   return base;

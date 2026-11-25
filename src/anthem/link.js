@@ -59,6 +59,7 @@ export class DeviceLink {
     this.connectedAt = undefined;
     this.lastAttempt = -Infinity;
     this.retryTimer = undefined;
+    this.retryAt = undefined;
     this.pollTimer = undefined;
     this.wakeTimers = new Map();
     this.volumeTimers = new Map();
@@ -117,6 +118,7 @@ export class DeviceLink {
     this.stopped = true;
     this.timers.clearTimeout(this.retryTimer);
     this.retryTimer = undefined;
+    this.retryAt = undefined;
     this.stopTimers();
     const session = this.session;
     this.session = undefined;
@@ -137,10 +139,29 @@ export class DeviceLink {
 
   schedule(ms) {
     this.timers.clearTimeout(this.retryTimer);
+    this.retryAt = this.now() + ms;
     this.retryTimer = this.timers.setTimeout(() => {
       this.retryTimer = undefined;
+      this.retryAt = undefined;
       this.connect();
     }, ms);
+  }
+
+  /**
+   * A connection asked now by a protective command (power off, mute):
+   * independent of the backoff, but never sooner than `protectConnectGap`
+   * after the last attempt (no storm while the user presses again).
+   */
+  connectNow() {
+    if (this.stopped || this.session || this.connecting) {
+      return;
+    }
+    const now = this.now();
+    const at = Math.max(now, this.lastAttempt + this.timings.protectConnectGap);
+    if (this.retryAt !== undefined && this.retryAt <= at) {
+      return;
+    }
+    this.schedule(at - now);
   }
 
   backoff() {
@@ -271,8 +292,9 @@ export class DeviceLink {
       const answer = await this.query(session, REQUESTS.query(zone, 'POW'));
       if (zone !== 1) {
         if (answer instanceof DeviceError) {
-          if (answer.kind === ERROR_KINDS.REFUSED) {
-            // "!I": no zone 2 on this model.
+          if (answer.kind === ERROR_KINDS.REFUSED && answer.code === 'I') {
+            // "!I" (invalid command): no zone 2 on this model. Any other
+            // refusal may pass: asked again at the next read.
             this.zone2 = false;
           }
           continue;
