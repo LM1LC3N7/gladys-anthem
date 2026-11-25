@@ -94,3 +94,7 @@ up to date at the end of every milestone.
   receiver, amplifier, home cinema.
 - **Forum**: no dedicated topic, no post from this module's work; the recap
   is posted by the lot.
+
+## Next patch
+
+- Review minors: see `_lots/lot25/reviews/anthem-r2.md` (M1 écart de 2 s non testé, M2 survivants, M3 course après 3 envois).
