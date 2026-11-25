@@ -36,8 +36,9 @@ test('power off then mute while the device is away: both kept, both sent when it
   );
   fake.override.delete('IDM?');
   await waitFor(() => fake.zones[1].power === false, 'the power off sent', 4_000);
-  assert.equal(fake.writes('Z1POW0').length >= 1, true);
-  assert.equal(fake.writes('Z1MUT1').length >= 1, true);
+  // The mute right after it, on the same connection.
+  await waitFor(() => fake.writes('Z1MUT1').length >= 1, 'the mute sent');
+  assert.ok(fake.writes('Z1POW0').length >= 1);
 });
 
 test('a protective press connects at once, whatever the backoff; never expired unsent', async (t) => {
