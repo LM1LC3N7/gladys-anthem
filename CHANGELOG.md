@@ -12,53 +12,19 @@ the notes of the version's GitHub Release.
 
 ### Added
 
-- A working example of scene triggers, scene actions and dashboard widgets
-  (Gladys 5.1.0 or later).
-- `CHANGELOG.md`, rolled by the Release workflow.
-- A GitHub Release for every version, with its changelog section as notes: the
-  Gladys Supervision page links each version to the repository's releases.
-- CI runs the tests on Node 22 and 24, and builds the Docker image.
-- Dependabot keeps the npm dependencies and the GitHub Actions up to date.
-- `SECURITY.md` (how to report a vulnerability) and `CLAUDE.md` (project rules
-  for contributors and coding assistants).
-- Manifest tests: `version` matches `package.json`, `docker_image` is tagged
-  with it, descriptions hold 10 to 100 characters, placeholders are
-  multi-language objects.
-- The latitude and longitude fields show an example value as placeholder.
-
-### Changed
-
-- Node.js 22 or later is required (Node 20 is end-of-life).
-- Integration SDK 0.16.1. The tests now run against the fake Gladys of the
-  SDK, which refuses the payloads Gladys refuses, including a device feature
-  missing `name`, `min`, `max`, `read_only` or `has_feedback`. A device
-  published with a `poll_frequency` is now polled without `should_poll: true`
-  on a recent core (an explicit `should_poll: false` opts out); the template
-  keeps the field explicit for the older cores.
-- The refresh interval is one minute minimum, the fastest Gladys polls a
-  device. The plug's power is only sent when it changes, and every 30
-  minutes otherwise.
-
-### Fixed
-
-- The switch, the light, the plug, the motion sensor and the camera could not
-  be added from the Discovery tab: their on/off, motion and image features had
-  no `min`/`max`, which Gladys requires (HTTP 422 "t_device_feature.min cannot
-  be null"). A test now checks that every feature carries the columns Gladys
-  needs to create it.
-- Gladys refused the devices of the Discovery tab: the weather station and
-  the plug declared their poll frequency in seconds instead of one of the
-  values Gladys accepts, and were never polled. They now poll every minute,
-  and the readings follow the refresh interval of the configuration.
-
-- The release commit no longer fails `npm run format:check`: the Release
-  workflow updates the manifest `version` and `docker_image` in place instead
-  of re-printing the whole file with `jq`.
-- The integration can write to `/data`: the image creates the directory owned
-  by the `node` user, a new Docker volume was owned by root.
-- A sub-container running the integration's own image follows it to the new
-  tag at each release, as well as in the manifest of the build summary: it kept
-  the previous tag, which may not exist on the registry. Sub-containers on a
-  third-party image (a broker, a database...) keep theirs.
-
-[Unreleased]: https://github.com/GladysAssistant/integration-template-js/commits/main
+- Anthem AV receivers and processors (MRX 540, 740, 1140, AVM 70, 90) over
+  their local IP control (TCP port 14999): one Gladys device per zone (main
+  zone, and zone 2 when the device answers for it).
+- Power state, Power on, Power off, volume (0 to 100 %), mute state, Mute,
+  Unmute and source (the input names of the device) for each zone.
+- A volume cap (40 % by default): every volume set from Gladys, unmuting and
+  powering on never go above it.
+- Power off and Mute are never blocked: they skip the queue of the zone,
+  cancel the commands still waiting, are kept while the device is not
+  connected (2 minutes, across a restart too) and sent again while a later
+  read shows them not applied (3 sends at most).
+- A command is reported as done only when a read made after it shows the
+  value asked; the zone is read again 5 and 20 seconds later otherwise.
+- A "Check the devices" button; the connection status says which address
+  does not answer.
+- Documentation in English and French.

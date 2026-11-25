@@ -1,67 +1,132 @@
-# Template de démonstration
+# Anthem pour Gladys Assistant
 
-Ceci est la documentation utilisateur de l'intégration. Gladys ré-héberge ce
-fichier et affiche un lien **Documentation** permanent vers lui dans l'écran
-de configuration (dans la langue de l'utilisateur, avec l'anglais en repli) —
-c'est au moment de configurer que l'utilisateur en a le plus besoin. Gardez
-les courtes indications d'accueil dans les blocs `section` du `config_schema`
-du manifest ; mettez ici le pas-à-pas détaillé (captures d'écran, dépannage…).
+Pilotez vos amplis-tuners et processeurs audio-vidéo Anthem depuis Gladys, sur
+votre réseau local, sans aucun cloud : marche, volume, sourdine et source de la
+zone principale et de la zone 2.
 
-## Ce que vous obtenez
+> Intégration non officielle, sans lien avec Anthem. Elle suit la fiche
+> officielle de contrôle IP d'Anthem (« MRX x40, AVM 70/90 IP & RS-232 » v5)
+> mais n'a **jamais été testée avec un vrai appareil** : vos retours sont les
+> bienvenus.
 
-Six appareils de démonstration apparaissent après l'installation : une
-station météo (vraies données Open-Meteo), un interrupteur, une lampe
-variable, une prise connectée avec mesure de puissance, un détecteur de
-mouvement et une caméra.
+## Appareils pris en charge
 
-## Configuration
+Les modèles de la fiche officielle : amplis-tuners **MRX 540, MRX 740,
+MRX 1140** et processeurs **AVM 70, AVM 90**. La zone 2 apparaît quand
+l'appareil répond pour elle (MRX 740, MRX 1140, AVM 70, AVM 90).
 
-1. Ouvrez l'onglet **Configuration** de l'intégration.
-2. Renseignez la **latitude** et la **longitude** que la station météo de
-   démonstration doit observer (Paris par défaut), et choisissez votre unité
-   de température. L'**intervalle de rafraîchissement** règle la fréquence
-   de lecture de la station météo et de la puissance de la prise : toutes
-   les 5 minutes par défaut, toutes les minutes au plus.
-3. Enregistrez : les appareils apparaissent dans l'onglet **Découverte**,
-   prêts à être ajoutés.
+D'autres modèles Anthem avec contrôle IP (anciens MRX x20 et x10, AVM 60, STR,
+MDX) peuvent répondre à une partie des commandes : marche, sourdine et source
+peuvent fonctionner ; le volume demande l'échelle en pour cent des modèles
+x40, il reste donc inconnu sur les autres et retirer la sourdine depuis Gladys
+est alors refusé (le plafond de volume ne peut pas être vérifié).
 
-Le réglage **Préférer la connexion locale** pilote la prise de
-démonstration : elle affiche en badge le canal réellement utilisé (local ou
-cloud), avec un point orange quand elle fonctionne en mode dégradé (local
-refusé, bascule cloud).
+## Préparer l'appareil
 
-## Actions
+1. Branchez l'appareil sur votre réseau (Ethernet ou Wi-Fi).
+2. Dans son menu de configuration, activez le **contrôle IP en veille**
+   (aussi appelé veille connectée) : sans lui, l'appareil n'est pas joignable
+   quand il est éteint, et Gladys ne peut pas l'allumer.
+3. Donnez-lui une **adresse IP fixe** dans votre box (réservation DHCP).
+4. Le port du contrôle IP est **14999**, sauf si vous avez changé « TCP Port ».
 
-- **Tester le fournisseur météo** — effectue une requête en direct vers
-  Open-Meteo et affiche la température et l'humidité actuelles sous le
-  bouton.
-- **Identifier un appareil** — choisissez un de vos appareils dans la liste
-  et il se signale (la lampe de démonstration « clignote » dans les logs).
+L'appareil accepte un nombre limité de clients IP à la fois et ferme le plus
+ancien quand un nouveau arrive : si l'application Anthem ou une autre
+domotique est aussi connectée, les connexions peuvent se chasser l'une
+l'autre. Gladys se reconnecte alors à intervalles espacés (10 s, doublés
+jusqu'à 5 minutes).
 
-## Scènes
+## Configurer l'intégration
 
-L'intégration ajoute ses propres cartes à l'éditeur de scènes (Gladys 5.1
-ou plus récent), dans la catégorie **Intégrations** :
+- **Adresses IP des appareils** : séparées par des virgules, par exemple
+  `192.168.1.40, 192.168.1.41`, avec le port s'il n'est pas 14999
+  (`192.168.1.40:15000`).
+- **Plafond de volume** (1 à 100 %, 40 par défaut) : le volume le plus fort
+  que Gladys peut régler, sur l'échelle en pour cent de l'appareil (30 %
+  correspond à -25 dB, 40 % à -20 dB, chaque pour cent au-dessus de 30 ajoute
+  0,5 dB ; 100 % correspond à +10 dB). 100 : pas de plafond.
 
-- **Mouvement détecté** (déclencheur) — lance la scène quand un détecteur
-  de démonstration voit bouger quelque chose. Choisissez éventuellement le
-  détecteur et ce qui a bougé (personne, animal) ; laissés vides, toute
-  détection correspond. Les actions suivantes peuvent lire ce qui a bougé
-  avec `{{triggerEvent.data.target}}`.
-- **Identifier un appareil** (action) — fait se signaler l'appareil choisi.
-  Elle indique si l'appareil a pu se signaler, pour que les actions
-  suivantes puissent en dépendre.
+Chaque zone apparaît ensuite dans l'onglet **Découverte** : créez celles que
+vous voulez. Le bouton **Vérifier les appareils** affiche l'état de chaque
+zone et le plafond.
 
-## Tableau de bord
+## Ce que vous obtenez, pour chaque zone
 
-Ajoutez le widget **État de la démo** à un tableau de bord : il affiche en
-direct la température de la station météo et la puissance de la prise du
-bureau, la connexion utilisée par la prise (en orange si dégradée) et la
-position observée. Son bouton **Identifier la lampe** fait se signaler la
-lampe de démonstration.
+| Fonction  | Genre               | Ce qu'elle fait                                                       |
+| --------- | ------------------- | --------------------------------------------------------------------- |
+| Power     | lecture seule (0/1) | 1 quand la zone est allumée, 0 éteinte ou appareil injoignable        |
+| Power on  | bouton              | allume la zone, puis ramène son volume au plafond s'il est au-dessus  |
+| Power off | bouton              | éteint la zone (protectrice : voir plus bas)                          |
+| Volume    | 0 à 100 %           | règle le volume, jamais au-dessus du plafond                          |
+| Muted     | lecture seule (0/1) | 1 quand la zone est en sourdine                                       |
+| Mute      | bouton              | coupe le son de la zone (protectrice : voir plus bas)                 |
+| Unmute    | bouton              | retire la sourdine, après avoir baissé un volume au-dessus du plafond |
+| Source    | liste               | les entrées de l'appareil, par leur nom                               |
 
-## Dépannage
+Il n'y a volontairement pas d'interrupteur marche/arrêt : un « tout éteindre »
+ou « tout allumer » d'une scène ou d'un assistant vocal n'allume jamais un
+ampli.
 
-L'intégration journalise tout ce qu'elle fait : consultez les logs de
-l'intégration depuis l'interface Gladys (ou `docker logs` sur l'hôte) avec
-`LOG_LEVEL=debug` pour le détail complet.
+Les états sont lus quand une zone change (quand l'appareil le signale) et
+toutes les 30 secondes. Une commande n'est dite réussie que si une lecture
+faite après elle montre la valeur demandée ; sinon Gladys indique « envoyée,
+sans confirmation » ou « envoyée, pas encore appliquée », et la zone est
+relue 5 et 20 secondes plus tard.
+
+### Le plafond de volume
+
+Tout volume réglé depuis Gladys (tableau de bord, scène, assistant vocal)
+passe par le plafond, lu juste avant l'envoi de la commande : une valeur plus
+forte est ramenée au plafond. Retirer la sourdine lit d'abord le volume et le
+baisse au plafond s'il est au-dessus, puis ne retire la sourdine qu'une fois
+qu'une lecture le montre au plafond ou en dessous ; si le volume ne peut pas
+être lu, rien n'est envoyé. Après un **Power on** depuis Gladys, le volume est lu dès que la
+zone le donne (dans les 2 minutes) et baissé au plafond s'il est au-dessus.
+Le volume réglé sur l'appareil lui-même (bouton, télécommande, application
+Anthem) n'est pas modifié autrement.
+
+### Éteindre et Couper le son ne sont jamais bloqués
+
+Power off et Mute n'attendent pas derrière les autres commandes de la zone
+(celles encore en attente sont annulées : rien de demandé avant ne part après
+elles), passent en premier sur la connexion (au plus derrière la seule requête
+en cours, 1 seconde au plus), et ne dépendent ni du plafond de volume, ni de la
+configuration (même si Gladys ne peut pas la donner), ni d'une lecture d'état
+préalable, ni d'une file de requêtes pleine.
+
+Elles ne partent pas, ou ne sont pas confirmées, dans ces seuls cas :
+
+- **l'appareil n'est pas connecté** : réessayées toutes les 250 ms pendant
+  environ 3 secondes, puis gardées (même après un redémarrage de
+  l'intégration) et envoyées dès que la connexion revient, pendant 2 minutes
+  au plus ;
+- **l'appareil les refuse** (une réponse d'erreur) : signalées comme refusées ;
+- **Mute sur une zone éteinte** (ou un appareil en veille) : rien ne joue,
+  signalé comme fait ;
+- **pas de confirmation dans les 5 secondes qu'attend Gladys** : signalées
+  « envoyée, sans confirmation ».
+
+Tant qu'elles ne sont pas confirmées, elles sont renvoyées (3 envois au plus,
+dans les 2 minutes) quand une lecture faite après elles montre encore la zone
+allumée (ou sans sourdine) ; un changement que l'appareil signale de lui-même
+(télécommande, application) ne les fait jamais renvoyer. Un Power on parti
+depuis Gladys arrête ce renvoi pour Power off, un Unmute parti depuis Gladys
+l'arrête pour Mute.
+
+## En cas de souci
+
+- **« Aucun appareil Anthem ne répond encore »** : vérifiez l'adresse, le port,
+  que le contrôle IP en veille est activé, et que rien ne bloque le port 14999.
+- **Non connecté quand l'appareil est éteint** : le contrôle IP en veille est
+  désactivé.
+- **Le volume reste inconnu** : le modèle n'a pas d'échelle de volume en pour
+  cent (voir Appareils pris en charge).
+- **Une source manque** : les entrées sont lues quand une zone est allumée ;
+  allumez-la une fois.
+
+## Vie privée
+
+Tout reste sur votre réseau local. L'intégration garde dans `/data` les
+appareils trouvés (adresse, modèle, zones, noms des entrées), le dernier
+plafond de volume, et les commandes Power off / Mute pas encore confirmées.
+Aucun compte, aucun mot de passe, aucun cloud.

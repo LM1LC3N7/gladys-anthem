@@ -1,0 +1,152 @@
+[
+  {
+    "name": "volume: the cap is not applied",
+    "file": "src/app.js",
+    "from": "const wanted = Math.min(value, cap);",
+    "to": "const wanted = value;"
+  },
+  {
+    "name": "volume: the cap falls back to 100 when the configuration is unread",
+    "file": "src/app.js",
+    "from": "return this.config?.maxVolume ?? this.data?.maxVolume ?? MAX_VOLUME.default;",
+    "to": "return this.config?.maxVolume ?? 100;"
+  },
+  {
+    "name": "unmute: a volume above the cap is not lowered",
+    "file": "src/app.js",
+    "from": "if (read.value > cap) {",
+    "to": "if (read.value > cap + 100) {"
+  },
+  {
+    "name": "unmute: an unread volume does not stop it",
+    "file": "src/app.js",
+    "from": "if (!read || read.value === undefined) {",
+    "to": "if (!read) {"
+  },
+  {
+    "name": "unmute: the lowering is not checked before unmuting",
+    "file": "src/app.js",
+    "from": "if (check?.value === undefined || check.value > cap) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "power on: a volume above the cap is never lowered",
+    "file": "src/app.js",
+    "from": "if (volume.value <= cap) {",
+    "to": "if (true) {"
+  },
+  {
+    "name": "confirmation: any read counts as done",
+    "file": "src/app.js",
+    "from": "if (read && read.value === wanted) {",
+    "to": "if (read) {"
+  },
+  {
+    "name": "protective: the commands waiting are not cancelled",
+    "file": "src/app.js",
+    "from": "    this.cancelQueued(target);\n",
+    "to": "\n"
+  },
+  {
+    "name": "protective: a command already dequeued still goes after a power off",
+    "file": "src/app.js",
+    "from": "return now.off === epoch.off && (key !== FEATURES.UNMUTE || now.mute === epoch.mute);",
+    "to": "return true;"
+  },
+  {
+    "name": "protective: no limit on the sends",
+    "file": "src/app.js",
+    "from": "return Boolean(pending) && pending.sends < this.timings.protectSends;",
+    "to": "return Boolean(pending);"
+  },
+  {
+    "name": "protective: confirmed by a read made before it",
+    "file": "src/app.js",
+    "from": "if (!read || read.value === undefined || read.seq <= pending.sentSeq) {",
+    "to": "if (!read || read.value === undefined) {"
+  },
+  {
+    "name": "protective: resent on a report the device sent by itself",
+    "file": "src/app.js",
+    "from": "if (link.readSeq(parsed.zone, field) <= pending.sentSeq) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "protective: a date of /data in the future is kept",
+    "file": "src/app.js",
+    "from": "if (age < 0 || age > this.timings.protectHold) {",
+    "to": "if (age > this.timings.protectHold) {"
+  },
+  {
+    "name": "protective: a power on that left does not end the resend",
+    "file": "src/app.js",
+    "from": "this.dropProtect(target, FEATURES.POWER_OFF);",
+    "to": "void 0;"
+  },
+  {
+    "name": "protective: not sent first when the connection comes back",
+    "file": "src/app.js",
+    "from": "this.sendProtect(platformId(known, z));",
+    "to": "void z;"
+  },
+  {
+    "name": "protective: no link for a device with a pending command only",
+    "file": "src/app.js",
+    "from": "return this.created.has(target) || this.protect.has(target);",
+    "to": "return this.created.has(target);"
+  },
+  {
+    "name": "protective: queued as a normal request",
+    "file": "src/anthem/connection.js",
+    "from": "const rank = protective ? 2 : urgent ? 1 : 0;",
+    "to": "const rank = urgent ? 1 : 0;"
+  },
+  {
+    "name": "protective: refused when the queue is full",
+    "file": "src/anthem/connection.js",
+    "from": "if (!protective && this.waiting.length >= LIMITS.pending) {",
+    "to": "if (this.waiting.length >= LIMITS.pending) {"
+  },
+  {
+    "name": "session: a dequeued request is written even when overtaken",
+    "file": "src/anthem/connection.js",
+    "from": "if (item.beforeSend && !item.beforeSend()) {",
+    "to": "if (false) {"
+  },
+  {
+    "name": "session: a late answer tagged as a read made after it",
+    "file": "src/anthem/connection.js",
+    "from": "return stale && this.now() < stale.until ? stale.seq : current.seq;",
+    "to": "return current.seq;"
+  },
+  {
+    "name": "/data: written over while unreadable",
+    "file": "src/app.js",
+    "from": "if (this.persistTimer || this.dataUnreadable || !this.data) {",
+    "to": "if (this.persistTimer || !this.data) {"
+  },
+  {
+    "name": "configuration: not asked again after a failure at connection",
+    "file": "src/app.js",
+    "from": "      this.configUnread = true;\n      await this.start(undefined, { connected: true });\n      this.scheduleConfigRetry();",
+    "to": "      this.configUnread = true;\n      await this.start(undefined, { connected: true });"
+  },
+  {
+    "name": "protocol: an empty volume read as 0",
+    "file": "src/anthem/protocol.js",
+    "from": "if (typeof raw !== 'string' || !/^\\d{1,3}$/.test(raw)) {",
+    "to": "if (typeof raw !== 'string' || !/^\\d{0,3}$/.test(raw)) {"
+  },
+  {
+    "name": "protocol: a volume above 100 can be written",
+    "file": "src/anthem/protocol.js",
+    "from": "zoneOk(zone) && Number.isInteger(value) && value >= VOLUME.min && value <= VOLUME.max",
+    "to": "zoneOk(zone) && Number.isInteger(value) && value >= VOLUME.min"
+  },
+  {
+    "name": "send: a command holds the wire for its whole budget",
+    "file": "src/app.js",
+    "from": "Math.min(this.timings.requestTimeout, this.remaining(started))",
+    "to": "this.remaining(started)"
+  }
+]
